@@ -1,0 +1,8 @@
+---
+nick: haskellLogger
+server:
+  address: irc.freenode.net
+  port: 6697
+  channels:
+    - "#lor"
+    - "#borsch"
