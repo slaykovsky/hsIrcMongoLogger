@@ -3,16 +3,16 @@
 
 module Main (main) where
 
-import Data.Maybe
-import Data.Time.Clock
-import Data.Text.Encoding as E
+import           Data.Maybe
+import           Data.Time.Clock
+import           Data.Text.Encoding as E
 import qualified Data.Text.IO as TIO
 import qualified Data.Text as T
-import Network.SimpleIRC
-import Network.SimpleIRC.Messages
-import Database.MongoDB ((=:))
+import           Network.SimpleIRC
+import           Network.SimpleIRC.Messages
+import           Database.MongoDB ((=:))
 import qualified Database.MongoDB as M
-import Control.Monad.Trans (liftIO)
+import           Control.Monad.Trans (liftIO)
 
 import Config
 
@@ -20,15 +20,17 @@ makeMessage :: IrcMessage -> IO [M.Field]
 makeMessage m = do
     time <- getCurrentTime
 
-    return $ [ "nick" =: nick
-             , "message" =: message
-             , "host" =: host
-             , "time" =: time
+    return $ [ "nickname" =: nickname
+             , "target"   =: target
+             , "msg"      =: msg
+             , "host"     =: host
+             , "time"     =: time
              ]
     where
-      nick = E.decodeUtf8 . fromJust $ mNick m
-      message = E.decodeUtf8 $ mMsg m
-      host = E.decodeUtf8 . fromJust $ mHost m
+      nickname = E.decodeUtf8 . fromJust $ mNick m
+      msg      = E.decodeUtf8 $ mMsg m
+      target   = E.decodeUtf8 . fromJust $ mChan m
+      host     = E.decodeUtf8 . fromJust $ mHost m
 
 insertMessage :: IrcMessage -> M.Action IO ()
 insertMessage m = do
@@ -37,7 +39,6 @@ insertMessage m = do
 
 run m = do
   insertMessage m
-  liftIO $ TIO.putStrLn "Inserted"
 
 onMessage :: EventFunc
 onMessage s m = do
