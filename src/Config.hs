@@ -42,7 +42,7 @@ instance FromJSON Config where
 readConfig :: IO Config
 readConfig = do
   filePath <- getConfigurationFilePath "config.yaml"
-  content <- B.readFile $ filePath
+  content  <- B.readFile $ filePath
   return . fromJust . Y.decode $ content
 
 printConfig :: IO ()

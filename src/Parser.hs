@@ -1,13 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser (IrcMessage(..), parseMessage) where
+module Parser (IrcMessage(..), getParameters, makeParameters, parseMessage) where
 
-import Prelude hiding (concat)
-import Data.Foldable hiding (concat)
+import Data.List (intercalate)
+import Data.List.Split (splitOn)
+import Data.Foldable
+import Data.Maybe
 import Control.Monad
 import Text.ParserCombinators.Parsec
-import Data.Text.Lazy (Text, concat, intercalate, pack, singleton, splitOn)
 
 import IrcCommand
 import CommandsTable
@@ -31,9 +32,9 @@ data IrcUser = IrcUser
     , server   :: Maybe IrcHostName
     } deriving (Show)
 
-data IrcNickName = IrcNickName Text deriving (Show)
-data IrcUserName = IrcUserName Text deriving (Show)
-data IrcHostName = IrcHostName Text deriving (Show)
+data IrcNickName = IrcNickName String deriving (Show)
+data IrcUserName = IrcUserName String deriving (Show)
+data IrcHostName = IrcHostName String deriving (Show)
 
 data IrcMessage = IrcMessage {
       iPrefix     :: IrcPrefix
@@ -41,43 +42,62 @@ data IrcMessage = IrcMessage {
     , iParameters :: Maybe IrcParameters
 } deriving (Show)
 
-data IrcParameters = IrcParamMsg { targets :: [IrcTarget], message :: Text }
-                   | IrcParamChan { channels :: [IrcTarget], keys :: Maybe [Text] }
-                   | IrcParamUser { username :: Text, mode :: Int, realname :: Text }
-                   | IrcParamDefault [Text]
-                     deriving (Show)
+data IrcParameters =
+    IrcParamMsg
+    { 
+      targets :: [IrcTarget]
+    , message :: String
+    } | IrcParamChan
+    {
+      channels :: [IrcTarget]
+    , keys :: Maybe [String]
+    } | IrcParamUser
+    {
+      username :: String
+    , mode     :: Int
+    , realname :: String
+    } | IrcParamDefault [String]
+    deriving (Show)
 
-data IrcTarget = IrcGlobalChannel Text
-               | IrcLocalChannel Text
+data IrcTarget = IrcGlobalChannel String
+               | IrcLocalChannel String
                | IrcTargetUser IrcUser
-               | IrcTargetUnknown Text
+               | IrcTargetUnknown Char
                  deriving (Show)
 
-makeCommand :: IrcCommand -> Either Text Text
-makeCommand c = case c of
-                  CmdNotice  -> Right "NOTICE"
-                  CmdPrivmsg -> Right "PRIVMSG"
-                  CmdPong    -> Right "PONG"
-                  _          -> Left $ concat ["Unknown command: ", (pack $ show c)]
+getParameters :: IrcMessage -> Maybe IrcParameters
+getParameters m = iParameters m
 
-makeParameters :: Maybe IrcParameters -> Either Text Text
+getMessage :: IrcParameters -> String
+getMessage p = message p
+
+makeCommand :: IrcCommand -> Either String String
+makeCommand CmdNotice  = Right "NOTICE"
+makeCommand CmdPrivmsg = Right "PRIVMSG"
+makeCommand CmdPong    = Right "PONG"
+makeCommand c@_        = Left $ "Unknown command: " ++ show c
+
+makeParameters :: Maybe IrcParameters -> Either String String
 makeParameters p = case p of
                      Just (IrcParamMsg ts msg) -> Right $ ircParamMsg ts msg
                      Just (IrcParamChan cs ks) -> Right $ ircParamChan cs ks
                      Just (IrcParamUser u m r) -> Right $ ircParamUser u m r
                      Just (IrcParamDefault ps) -> Right $ intercalate " :" ps
-                     Nothing -> Right ""
+                     Nothing -> Left ""
     where
-      ircParamUser u m r = intercalate " " [u, (pack . show $ m), "*", concat [":", r]]
+      ircParamUser u m r = intercalate " " [u, show $ m, "*", concat [":", r]]
       ircParamMsg ts msg = concat [targetsMerge ts, " :", msg]
-      ircParamChan cs ks = case (cs, ks) of
-                             (cs, Nothing) -> targetsMerge cs
-                             (cs, Just ks) -> concat[targetsMerge cs, " ", commaConcat ks]
+
+      ircParamChan cs Nothing   = targetsMerge cs
+      ircParamChan cs (Just ks) = concat [targetsMerge cs, " ", commaConcat ks]
+
       targetsMerge ts = commaConcat $ map getTarget ts
       commaConcat = intercalate ","
-      getTarget t = case t of
-                      IrcLocalChannel c  -> concat ["&", c]
-                      IrcGlobalChannel c -> concat ["#", c]
+
+      getTarget (IrcLocalChannel c)  = concat ["&", c]
+      getTarget (IrcGlobalChannel c) = concat ["#", c]
+      getTarget (IrcTargetUser u) = show $ fromJust (nickName u)
+      getTarget (IrcTargetUnknown _)   = "*"
 
 parseTarget :: Parser IrcTarget
 parseTarget = try getUnknownTarget
@@ -89,7 +109,7 @@ parseTarget = try getUnknownTarget
     where
       getUnknownTarget = do
         c <- char '*'
-        return $ IrcTargetUnknown (singleton c)
+        return $ IrcTargetUnknown c
       getTargetUserUHS = do
         user <- parseUserUHS
         return $ IrcTargetUser user
@@ -151,17 +171,17 @@ parseChannel = try getLocalChannel <|> try getGlobalChannel
       getLocalChannel = do
         char '&'
         channel <- getChannelName
-        return $ IrcLocalChannel (pack channel)
+        return $ IrcLocalChannel channel
       getGlobalChannel = do
         char '#'
         channel <- getChannelName
-        return $ IrcGlobalChannel (pack channel)
+        return $ IrcGlobalChannel channel
       getChannelName = many (alphaNum <|> oneOf ":-")
 
 parseHostName :: Parser IrcHostName
 parseHostName = do
   segments <- sepBy1 parseSegment separator
-  return $ IrcHostName $ intercalate "." (map pack segments)
+  return $ IrcHostName $ intercalate "." segments
     where
       parseSegment = do
                   segment <- many1 $ alphaNum <|> oneOf "-/"
@@ -173,12 +193,12 @@ parseHostName = do
 parseNickName :: Parser IrcNickName
 parseNickName = do
   nickName <- many $ alphaNum <|> oneOf "-."
-  return $ IrcNickName (pack nickName)
+  return $ IrcNickName nickName
 
 parseUserName :: Parser IrcUserName
 parseUserName = do
   userName <- many $ alphaNum <|> oneOf ".-~+"
-  return $ IrcUserName (pack userName)
+  return $ IrcUserName userName
 
 parseCommand :: Parser IrcCommand
 parseCommand = asum commandParser
@@ -199,7 +219,7 @@ parseMsgParameters = do
   targets <- parseTargets
   string " :"
   message <- many $ noneOf "\r\n"
-  return $ IrcParamMsg targets (pack message)
+  return $ IrcParamMsg targets message
 
 parseUserParameters :: Parser IrcParameters
 parseUserParameters = do
@@ -207,14 +227,14 @@ parseUserParameters = do
   char ' '
   mode <- digit
   realname <- many $ noneOf "\r\n"
-  return $ IrcParamUser (pack username) (read [mode] :: Int) (pack realname)
+  return $ IrcParamUser username (read [mode] :: Int) realname
 
 parseChannelAndKeysParameters :: Parser IrcParameters
 parseChannelAndKeysParameters = do
   channels <- parseTargets
   char ' '
   keys <- sepBy1 (many $ noneOf ", ") separator
-  return $ IrcParamChan channels (Just (map pack keys))
+  return $ IrcParamChan channels (Just keys)
     where
       separator = char ','
 
@@ -226,7 +246,7 @@ parseChannelParameters = do
 parseDefaultParameters :: Parser IrcParameters
 parseDefaultParameters = do
   x <- many $ noneOf "\r\n"
-  return $ IrcParamDefault $ splitOn " :" (pack x)
+  return $ IrcParamDefault $ splitOn " :" x
 
 parsePrefix :: Parser IrcPrefix
 parsePrefix = do
@@ -253,6 +273,5 @@ parseMessage = do
   prefix <- option IrcPrefixDefault parsePrefix
   command <- parseCommand
   char ' '
-  parameters <- optionMaybe $ parseParameters command
+  parameters <- option Nothing (liftM Just (parseParameters command))
   return $ IrcMessage prefix command parameters
-

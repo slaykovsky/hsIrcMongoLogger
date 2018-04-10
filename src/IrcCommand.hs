@@ -86,6 +86,7 @@ data IrcCommand = CmdOper
                 | RplWhowasuser
                 | RplTracenewtype
                 | RplTraceserver
+                | RplHosthidden
                 | RplStatslinkinfo
                 | RplInviting
                 | RplMotd
@@ -200,4 +201,4 @@ data IrcCommand = CmdOper
                 | ErrErroneusnickname
                 | ErrUmodeunknownflag
                 | ErrUsernotinchannel
-                  deriving (Show)
+                  deriving (Eq, Show)

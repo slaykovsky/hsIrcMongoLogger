@@ -1,8 +1,8 @@
 ---
-nick: haskellLogger
+nick: lormorfism
 server:
-  address: irc.freenode.net
-  port: 6697
+  address: irc.freenode.org
+  port: 6667
   channels:
     - "#lor"
     - "#borsch"

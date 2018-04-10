@@ -92,6 +92,7 @@ commandsTable = [
   , ("314", RplWhowasuser)
   , ("208", RplTracenewtype)
   , ("206", RplTraceserver)
+  , ("396", RplHosthidden)
   , ("211", RplStatslinkinfo)
   , ("341", RplInviting)
   , ("372", RplMotd)
